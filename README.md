@@ -48,3 +48,9 @@ conda run -n pygame_playground cmake -G Xcode ../ios
 conda run -n pygame_playground cmake -G Xcode -DCMAKE_SYSTEM_NAME=iOS ../ios
 ```
 Then, open the generated Xcode project in Xcode.
+
+---
+
+## Agent Guidelines
+AI Coding Agents working on this repository should review the [AGENTS.md](file:///Users/sameep/code/ndi_viewer/AGENTS.md) guide for environment setup, architecture maps, and git limits.
+
