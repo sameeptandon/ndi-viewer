@@ -1,0 +1,19 @@
+# Build directories
+build/
+build_ios/
+build_mac_swift/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Xcode / Apple user specific files
+*.xcuserdata
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+DerivedData/
+
+# Large static libraries (exceeding GitHub's 100MB limit)
+ios/libs/libndi_ios.a
+ios/libs/libndi_visionos.a
