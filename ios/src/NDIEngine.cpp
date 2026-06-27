@@ -195,8 +195,8 @@ void NDIEngine::captureLoop() {
         NDIlib_audio_frame_v3_t audioFrame;
         NDIlib_metadata_frame_t metadataFrame;
 
-        // Poll immediately (0ms timeout) without spin-waiting
-        NDIlib_frame_type_e type = NDIlib_recv_capture_v3(pRecv, &videoFrame, &audioFrame, &metadataFrame, 0);
+        // Block efficiently on network events (up to 1000ms) to let the kernel sleep the thread
+        NDIlib_frame_type_e type = NDIlib_recv_capture_v3(pRecv, &videoFrame, &audioFrame, &metadataFrame, 1000);
 
         bool frameProcessed = false;
 
@@ -351,9 +351,7 @@ void NDIEngine::captureLoop() {
             lastStatsTime = now;
         }
 
-        if (!frameProcessed) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        }
+
     }
 }
 
