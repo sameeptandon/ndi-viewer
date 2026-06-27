@@ -45,9 +45,25 @@ vertex VertexOutput vertexShader(uint vertexId [[vertex_id]]) {
 }
 
 fragment float4 fragmentShader(VertexOutput in [[stage_in]],
-                               texture2d<float> colorTexture [[texture(0)]]) {
-    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
-    return colorTexture.sample(textureSampler, in.texCoords);
+                               texture2d<float> colorTexture [[texture(0)]],
+                               constant uint32_t &isYUV [[buffer(0)]]) {
+    // Explicit clamp_to_edge is required for subsampled YUV format textures like bgrg422
+    constexpr sampler textureSampler(mag_filter::linear, min_filter::linear, address::clamp_to_edge);
+    float4 color = colorTexture.sample(textureSampler, in.texCoords);
+    
+    if (isYUV != 0) {
+        float y = color.g;
+        float cr = color.r - 0.5;
+        float cb = color.b - 0.5;
+        
+        // BT.709 YUV-to-RGB conversion matrix
+        float r = y + 1.5748 * cr;
+        float g = y - 0.1873 * cb - 0.4681 * cr;
+        float b = y + 1.8556 * cb;
+        return float4(r, g, b, 1.0);
+    } else {
+        return color;
+    }
 }
 """
 
@@ -102,6 +118,7 @@ public struct MetalVideoView: PlatformViewRepresentable {
         private var texture: MTLTexture?
         private var cancellable: AnyCancellable?
         private var latestFrameTimestampMs: Int64 = 0
+        private var currentFrameIsYUV = false
         
         private let textureMutex = NSLock()
         
@@ -124,7 +141,7 @@ public struct MetalVideoView: PlatformViewRepresentable {
             }
         }
         
-        func subscribe(to publisher: PassthroughSubject<(data: Data, width: Int, height: Int, stride: Int, timestampMs: Int64), Never>, view: MTKView) {
+        func subscribe(to publisher: PassthroughSubject<(data: Data, width: Int, height: Int, stride: Int, timestampMs: Int64, isYUV: Bool), Never>, view: MTKView) {
             cancellable = publisher
                 .sink { [weak self, weak view] frame in
                     guard let self = self, let view = view else { return }
@@ -133,11 +150,18 @@ public struct MetalVideoView: PlatformViewRepresentable {
                     defer { self.textureMutex.unlock() }
                     
                     self.latestFrameTimestampMs = frame.timestampMs
+                    self.currentFrameIsYUV = frame.isYUV
                     
-                    // Create texture if dimensions changed
-                    if self.texture == nil || self.texture?.width != frame.width || self.texture?.height != frame.height {
+                    let pixelFormat: MTLPixelFormat = frame.isYUV ? .bgrg422 : .bgra8Unorm
+                    
+                    // Create texture if dimensions or pixel format changed
+                    if self.texture == nil ||
+                       self.texture?.width != frame.width ||
+                       self.texture?.height != frame.height ||
+                       self.texture?.pixelFormat != pixelFormat {
+                        
                         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                            pixelFormat: .bgra8Unorm,
+                            pixelFormat: pixelFormat,
                             width: frame.width,
                             height: frame.height,
                             mipmapped: false
@@ -186,6 +210,9 @@ public struct MetalVideoView: PlatformViewRepresentable {
             
             encoder.setRenderPipelineState(pipelineState)
             encoder.setFragmentTexture(texture, index: 0)
+            
+            var isYUVVal: UInt32 = currentFrameIsYUV ? 1 : 0
+            encoder.setFragmentBytes(&isYUVVal, length: MemoryLayout<UInt32>.size, index: 0)
             
             // Draw full-screen quad (4 vertices mapped inside the vertex shader)
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)

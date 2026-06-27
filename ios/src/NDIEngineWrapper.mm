@@ -4,7 +4,7 @@
 @implementation NDIEngineWrapper {
     NDIEngine *m_engine;
     void (^m_discoveryCallback)(NSArray<NSString *> *);
-    void (^m_videoCallback)(NSData *, NSInteger, NSInteger, NSInteger, int64_t);
+    void (^m_videoCallback)(NSData *, NSInteger, NSInteger, NSInteger, int64_t, BOOL);
     void (^m_audioCallback)(NSData *, NSInteger, NSInteger, NSInteger, NSInteger);
 }
 
@@ -54,18 +54,18 @@
     m_engine->disconnect();
 }
 
-- (void)startCaptureWithVideoCallback:(void (^)(NSData *, NSInteger, NSInteger, NSInteger, int64_t))videoCallback
+- (void)startCaptureWithVideoCallback:(void (^)(NSData *, NSInteger, NSInteger, NSInteger, int64_t, BOOL))videoCallback
                         audioCallback:(void (^)(NSData *, NSInteger, NSInteger, NSInteger, NSInteger))audioCallback {
     m_videoCallback = [videoCallback copy];
     m_audioCallback = [audioCallback copy];
     
     void *selfPointer = (__bridge void *)self;
-    m_engine->startCapture([](const uint8_t* data, int width, int height, int stride, int64_t timestampMs, void* context) {
+    m_engine->startCapture([](const uint8_t* data, int width, int height, int stride, int64_t timestampMs, bool isYUV, void* context) {
         NDIEngineWrapper *thisWrapper = (__bridge NDIEngineWrapper *)context;
         if (thisWrapper && thisWrapper->m_videoCallback) {
             NSInteger size = height * stride;
             NSData *frameData = [NSData dataWithBytesNoCopy:(void*)data length:size freeWhenDone:NO];
-            thisWrapper->m_videoCallback(frameData, width, height, stride, timestampMs);
+            thisWrapper->m_videoCallback(frameData, width, height, stride, timestampMs, isYUV);
         }
     }, [](const float* data, int samples, int channels, int sampleRate, int channelStrideBytes, void* context) {
         NDIEngineWrapper *thisWrapper = (__bridge NDIEngineWrapper *)context;

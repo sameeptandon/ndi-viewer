@@ -63,7 +63,7 @@ public class NDIConnectionManager: ObservableObject {
     @Published public var streamHeight: CGFloat = 9
 
     // Publisher for the latest frame data
-    public let framePublisher = PassthroughSubject<(data: Data, width: Int, height: Int, stride: Int, timestampMs: Int64), Never>()
+    public let framePublisher = PassthroughSubject<(data: Data, width: Int, height: Int, stride: Int, timestampMs: Int64, isYUV: Bool), Never>()
 
     public init() {
         startDiscovery()
@@ -124,7 +124,7 @@ public class NDIConnectionManager: ObservableObject {
 
     private func startCapture() {
         wrapper.startCapture(
-            videoCallback: { [weak self] data, width, height, stride, timestampMs in
+            videoCallback: { [weak self] data, width, height, stride, timestampMs, isYUV in
                 guard let self = self, let data = data else { return }
 
                 DispatchQueue.main.async {
@@ -139,7 +139,8 @@ public class NDIConnectionManager: ObservableObject {
                     width: width,
                     height: height,
                     stride: stride,
-                    timestampMs: timestampMs
+                    timestampMs: timestampMs,
+                    isYUV: isYUV
                 ))
             },
             audioCallback: { [weak self] data, samples, channels, sampleRate, channelStrideBytes in

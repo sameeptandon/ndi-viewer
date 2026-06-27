@@ -28,7 +28,7 @@ public:
     void disconnect();
 
     // Capture API
-    void startCapture(void (*videoCallback)(const uint8_t* data, int width, int height, int stride, int64_t timestampMs, void* context),
+    void startCapture(void (*videoCallback)(const uint8_t* data, int width, int height, int stride, int64_t timestampMs, bool isYUV, void* context),
                       void (*audioCallback)(const float* data, int samples, int channels, int sampleRate, int channelStrideBytes, void* context),
                       void* context);
     void stopCapture();
@@ -63,7 +63,7 @@ private:
     void (*m_sourcesCallback)(const char** sources, int count, void* context);
     void* m_sourcesContext;
 
-    void (*m_videoCallback)(const uint8_t* data, int width, int height, int stride, int64_t timestampMs, void* context);
+    void (*m_videoCallback)(const uint8_t* data, int width, int height, int stride, int64_t timestampMs, bool isYUV, void* context);
     void (*m_audioCallback)(const float* data, int samples, int channels, int sampleRate, int channelStrideBytes, void* context);
     void* m_captureContext;
 

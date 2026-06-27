@@ -8,7 +8,7 @@
 - (BOOL)connectTo:(NSString *)sourceName;
 - (void)disconnect;
 
-- (void)startCaptureWithVideoCallback:(void (^)(NSData *data, NSInteger width, NSInteger height, NSInteger stride, int64_t timestampMs))videoCallback
+- (void)startCaptureWithVideoCallback:(void (^)(NSData *data, NSInteger width, NSInteger height, NSInteger stride, int64_t timestampMs, BOOL isYUV))videoCallback
                         audioCallback:(void (^)(NSData *data, NSInteger samples, NSInteger channels, NSInteger sampleRate, NSInteger channelStrideBytes))audioCallback;
 - (void)stopCapture;
 

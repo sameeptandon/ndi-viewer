@@ -101,7 +101,7 @@ bool NDIEngine::connectTo(const char* sourceName) {
 
     NDIlib_recv_create_v3_t recvSettings;
     recvSettings.source_to_connect_to.p_ndi_name = nullptr; // Connect manually below
-    recvSettings.color_format = NDIlib_recv_color_format_BGRX_BGRA; // Raw ARGB/BGRA format
+    recvSettings.color_format = NDIlib_recv_color_format_UYVY_BGRA; // Prefer native UYVY, fallback to BGRA
     recvSettings.bandwidth = NDIlib_recv_bandwidth_highest;
     recvSettings.allow_video_fields = false;
     recvSettings.p_ndi_recv_name = "iOS NDI Viewer Receiver";
@@ -146,7 +146,7 @@ void NDIEngine::disconnect() {
     m_jitterSum = 0.0;
 }
 
-void NDIEngine::startCapture(void (*videoCallback)(const uint8_t* data, int width, int height, int stride, int64_t timestampMs, void* context),
+void NDIEngine::startCapture(void (*videoCallback)(const uint8_t* data, int width, int height, int stride, int64_t timestampMs, bool isYUV, void* context),
                              void (*audioCallback)(const float* data, int samples, int channels, int sampleRate, int channelStrideBytes, void* context),
                              void* context) {
     if (m_captureRunning) return;
@@ -222,7 +222,8 @@ void NDIEngine::captureLoop() {
 
             // Fire Swift video callback
             if (videoFrame.p_data && m_videoCallback) {
-                m_videoCallback(videoFrame.p_data, videoFrame.xres, videoFrame.yres, videoFrame.line_stride_in_bytes, nowMs, m_captureContext);
+                bool isYUV = (videoFrame.FourCC == NDIlib_FourCC_type_UYVY);
+                m_videoCallback(videoFrame.p_data, videoFrame.xres, videoFrame.yres, videoFrame.line_stride_in_bytes, nowMs, isYUV, m_captureContext);
             }
 
             NDIlib_recv_free_video_v2(pRecv, &videoFrame);
