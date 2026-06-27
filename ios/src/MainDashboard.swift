@@ -73,8 +73,6 @@ struct MainDashboard: View {
                     if showDiagnostics {
                         DiagnosticsHUD(stats: manager.stats, sourceName: manager.currentSource)
                             .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                            .opacity(controlsVisible ? 1.0 : 0.0)
-                            .allowsHitTesting(controlsVisible)
                     }
                     
                     // Top-right controls overlay
