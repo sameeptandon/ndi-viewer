@@ -118,7 +118,6 @@ public struct MetalVideoView: PlatformViewRepresentable {
         private var commandQueue: MTLCommandQueue?
         private var pipelineState: MTLRenderPipelineState?
         private var texture: MTLTexture?
-        private var textureCache: CVMetalTextureCache? = nil
         private var cancellable: AnyCancellable?
         private var latestFrameTimestampMs: Int64 = 0
         private var currentFrameIsYUV = false
@@ -131,9 +130,6 @@ public struct MetalVideoView: PlatformViewRepresentable {
             guard let device = mtkView.device else { return }
             self.device = device
             self.commandQueue = device.makeCommandQueue()
-            
-            // Initialize CoreVideo Metal Texture Cache for hardware zero-copy texture mapping
-            CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, device, nil, &self.textureCache)
             
             // Compile Metal shaders dynamically at runtime
             do {
@@ -194,88 +190,31 @@ public struct MetalVideoView: PlatformViewRepresentable {
             self.currentFrameIsYUV = frame.isYUV
             let pixelFormat: MTLPixelFormat = frame.isYUV ? .bgrg422 : .bgra8Unorm
             
-            // Map the video frame using CoreVideo zero-copy texture cache mapping if cache is available
-            if let cache = self.textureCache {
-                var pixelBuffer: CVPixelBuffer? = nil
-                let pixelFormatType: OSType = frame.isYUV ? kCVPixelFormatType_422YpCbCr8 : kCVPixelFormatType_32BGRA
+            // Upload the video frame directly to the recycled MTLTexture
+            if self.texture == nil ||
+               self.texture?.width != frame.width ||
+               self.texture?.height != frame.height ||
+               self.texture?.pixelFormat != pixelFormat {
                 
-                let attrs = [
-                    kCVPixelBufferMetalCompatibilityKey: true
-                ] as CFDictionary
-                
-                let status = CVPixelBufferCreate(
-                    kCFAllocatorDefault,
-                    frame.width,
-                    frame.height,
-                    pixelFormatType,
-                    attrs,
-                    &pixelBuffer
+                let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                    pixelFormat: pixelFormat,
+                    width: frame.width,
+                    height: frame.height,
+                    mipmapped: false
                 )
-                
-                if status == kCVReturnSuccess, let pb = pixelBuffer {
-                    CVPixelBufferLockBaseAddress(pb, CVPixelBufferLockFlags(rawValue: 0))
-                    if let destAddr = CVPixelBufferGetBaseAddress(pb) {
-                        let bytesPerRow = CVPixelBufferGetBytesPerRow(pb)
-                        frame.data.withUnsafeBytes { rawBuffer in
-                            if let srcAddr = rawBuffer.baseAddress {
-                                if frame.stride == bytesPerRow {
-                                    memcpy(destAddr, srcAddr, frame.height * frame.stride)
-                                } else {
-                                    for y in 0..<frame.height {
-                                        let srcRow = srcAddr.advanced(by: y * frame.stride)
-                                        let destRow = destAddr.advanced(by: y * bytesPerRow)
-                                        memcpy(destRow, srcRow, min(frame.stride, bytesPerRow))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    CVPixelBufferUnlockBaseAddress(pb, CVPixelBufferLockFlags(rawValue: 0))
-                    
-                    var cvMetalTexture: CVMetalTexture? = nil
-                    let cacheStatus = CVMetalTextureCacheCreateTextureFromImage(
-                        kCFAllocatorDefault,
-                        cache,
-                        pb,
-                        nil,
-                        pixelFormat,
-                        frame.width,
-                        frame.height,
-                        0,
-                        &cvMetalTexture
+                descriptor.usage = [.shaderRead]
+                self.texture = self.device?.makeTexture(descriptor: descriptor)
+            }
+            
+            let region = MTLRegionMake2D(0, 0, frame.width, frame.height)
+            frame.data.withUnsafeBytes { rawBufferPointer in
+                if let baseAddress = rawBufferPointer.baseAddress {
+                    self.texture?.replace(
+                        region: region,
+                        mipmapLevel: 0,
+                        withBytes: baseAddress,
+                        bytesPerRow: frame.stride
                     )
-                    
-                    if cacheStatus == kCVReturnSuccess, let cvt = cvMetalTexture {
-                        self.texture = CVMetalTextureGetTexture(cvt)
-                    }
-                }
-            } else {
-                // Fallback to traditional MTLTexture allocation and replace (direct copy)
-                if self.texture == nil ||
-                   self.texture?.width != frame.width ||
-                   self.texture?.height != frame.height ||
-                   self.texture?.pixelFormat != pixelFormat {
-                    
-                    let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                        pixelFormat: pixelFormat,
-                        width: frame.width,
-                        height: frame.height,
-                        mipmapped: false
-                    )
-                    descriptor.usage = [.shaderRead]
-                    self.texture = self.device?.makeTexture(descriptor: descriptor)
-                }
-                
-                let region = MTLRegionMake2D(0, 0, frame.width, frame.height)
-                frame.data.withUnsafeBytes { rawBufferPointer in
-                    if let baseAddress = rawBufferPointer.baseAddress {
-                        self.texture?.replace(
-                            region: region,
-                            mipmapLevel: 0,
-                            withBytes: baseAddress,
-                            bytesPerRow: frame.stride
-                        )
-                    }
                 }
             }
             
