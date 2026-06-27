@@ -82,12 +82,20 @@ public struct MetalVideoView: PlatformViewRepresentable {
     }
     
     public func updateNSView(_ nsView: MTKView, context: Context) {}
+    
+    public func sizeThatFits(_ proposal: ProposedViewSize, nsView: MTKView, context: Context) -> CGSize? {
+        return proposal.replacingUnspecifiedDimensions()
+    }
     #else
     public func makeUIView(context: Context) -> MTKView {
         return makeMTKView(context: context)
     }
     
     public func updateUIView(_ uiView: MTKView, context: Context) {}
+    
+    public func sizeThatFits(_ proposal: ProposedViewSize, uiView: MTKView, context: Context) -> CGSize? {
+        return proposal.replacingUnspecifiedDimensions()
+    }
     #endif
     
     private func makeMTKView(context: Context) -> MTKView {
@@ -244,7 +252,7 @@ class NDIMetalView: MTKView {
             // Set isPaused = false and enableSetNeedsDisplay = false to run the continuous background VSYNC loop
             self.isPaused = false
             self.enableSetNeedsDisplay = false
-            self.preferredFramesPerSecond = 120 // Target high-refresh rate on macOS
+            self.preferredFramesPerSecond = 60 // Lock to 60 FPS to match NDI source rate and prevent redundant rendering
         } else {
             self.isPaused = true
         }
