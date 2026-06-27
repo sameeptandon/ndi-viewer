@@ -91,19 +91,15 @@ public struct MetalVideoView: PlatformViewRepresentable {
     #endif
     
     private func makeMTKView(context: Context) -> MTKView {
-        let mtkView = MTKView()
+        let mtkView = NDIMetalView()
         mtkView.device = MTLCreateSystemDefaultDevice()
         mtkView.colorPixelFormat = .bgra8Unorm
         mtkView.framebufferOnly = true
-        
-        // Manual draw mode triggered by NDI frame arrival (bypasses macOS SwiftUI window display link bugs)
-        mtkView.isPaused = true
-        mtkView.enableSetNeedsDisplay = false
         mtkView.delegate = context.coordinator
         
         context.coordinator.manager = manager
         context.coordinator.setupPipeline(with: mtkView)
-        context.coordinator.subscribe(to: manager.framePublisher, view: mtkView)
+        context.coordinator.subscribe(to: manager.framePublisher)
         
         return mtkView
     }
@@ -145,19 +141,15 @@ public struct MetalVideoView: PlatformViewRepresentable {
             }
         }
         
-        func subscribe(to publisher: PassthroughSubject<(data: Data, width: Int, height: Int, stride: Int, timestampMs: Int64, isYUV: Bool), Never>, view: MTKView) {
+        func subscribe(to publisher: PassthroughSubject<(data: Data, width: Int, height: Int, stride: Int, timestampMs: Int64, isYUV: Bool), Never>) {
             cancellable = publisher
-                .sink { [weak self, weak view] frame in
-                    guard let self = self, let view = view else { return }
+                .sink { [weak self] frame in
+                    guard let self = self else { return }
                     
                     self.textureMutex.lock()
                     self.pendingFrame = (data: frame.data, width: frame.width, height: frame.height, stride: frame.stride, isYUV: frame.isYUV)
                     self.latestFrameTimestampMs = frame.timestampMs
                     self.textureMutex.unlock()
-                    
-                    DispatchQueue.main.async {
-                        view.draw()
-                    }
                 }
         }
         
@@ -247,3 +239,34 @@ public struct MetalVideoView: PlatformViewRepresentable {
         }
     }
 }
+
+#if os(macOS)
+class NDIMetalView: MTKView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if self.window != nil {
+            // Auto VSYNC render loop runs on background thread when attached to window (bypasses main thread)
+            self.isPaused = false
+            self.enableSetNeedsDisplay = true
+            self.preferredFramesPerSecond = 120 // Target high-refresh rate on macOS
+        } else {
+            self.isPaused = true
+            self.enableSetNeedsDisplay = false
+        }
+    }
+}
+#else
+class NDIMetalView: MTKView {
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if self.window != nil {
+            self.isPaused = false
+            self.enableSetNeedsDisplay = true
+            self.preferredFramesPerSecond = 60
+        } else {
+            self.isPaused = true
+            self.enableSetNeedsDisplay = false
+        }
+    }
+}
+#endif
