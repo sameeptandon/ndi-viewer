@@ -55,6 +55,7 @@ public class NDIConnectionManager: ObservableObject {
     private var wrapper = NDIEngineWrapper()
     private var statsTimer: Timer?
     private var audioPlayer = NDIAudioPlayer()
+    private var latestRenderLatencyMs: Double = 0.0
 
     @Published public var sources: [String] = []
     @Published public var isStreaming = false
@@ -162,7 +163,7 @@ public class NDIConnectionManager: ObservableObject {
     }
 
     public func updateRenderLatency(_ latency: Double) {
-        self.stats.renderLatencyMs = latency
+        self.latestRenderLatencyMs = latency
     }
 
     private func updateStats() {
@@ -175,7 +176,7 @@ public class NDIConnectionManager: ObservableObject {
                 droppedFrames: rawStats["droppedFrames"] as? Int64 ?? 0,
                 queueDepth: rawStats["queueDepth"] as? Int32 ?? 0,
                 jitterMs: rawStats["jitterMs"] as? Double ?? 0.0,
-                renderLatencyMs: self.stats.renderLatencyMs,
+                renderLatencyMs: self.latestRenderLatencyMs,
                 bitrateMBs: rawStats["bitrateMBs"] as? Double ?? 0.0
             )
         }
