@@ -95,14 +95,9 @@ public struct MetalVideoView: PlatformViewRepresentable {
         mtkView.colorPixelFormat = .bgra8Unorm
         mtkView.framebufferOnly = true
         
-        // VSYNC-aligned render loop: MTKView will render continuously at display refresh rate
-        mtkView.isPaused = false
-        mtkView.enableSetNeedsDisplay = true
-        #if os(macOS)
-        mtkView.preferredFramesPerSecond = 120 // Target high-refresh rate on macOS
-        #else
-        mtkView.preferredFramesPerSecond = 60
-        #endif
+        // Manual draw mode triggered by NDI frame arrival (bypasses macOS SwiftUI window display link bugs)
+        mtkView.isPaused = true
+        mtkView.enableSetNeedsDisplay = false
         mtkView.delegate = context.coordinator
         
         context.coordinator.manager = manager
@@ -155,13 +150,17 @@ public struct MetalVideoView: PlatformViewRepresentable {
         
         func subscribe(to publisher: PassthroughSubject<(data: Data, width: Int, height: Int, stride: Int, timestampMs: Int64, isYUV: Bool), Never>, view: MTKView) {
             cancellable = publisher
-                .sink { [weak self] frame in
-                    guard let self = self else { return }
+                .sink { [weak self, weak view] frame in
+                    guard let self = self, let view = view else { return }
                     
                     self.textureMutex.lock()
                     self.pendingFrame = (data: frame.data, width: frame.width, height: frame.height, stride: frame.stride, isYUV: frame.isYUV)
                     self.latestFrameTimestampMs = frame.timestampMs
                     self.textureMutex.unlock()
+                    
+                    DispatchQueue.main.async {
+                        view.draw()
+                    }
                 }
         }
         
