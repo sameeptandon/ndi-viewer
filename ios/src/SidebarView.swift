@@ -40,6 +40,34 @@ struct SidebarView: View {
                     .fontWeight(.bold)
                     .foregroundColor(.secondary)
             }
+            
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker("Transport", selection: Binding(
+                        get: { manager.preferredTransport },
+                        set: { newTransport in
+                            manager.updateTransport(newTransport)
+                        }
+                    )) {
+                        Text("Multi-TCP").tag("multi-tcp")
+                        Text("Reliable UDP").tag("udp")
+                        Text("Single TCP").tag("tcp")
+                    }
+                    .pickerStyle(.segmented)
+                    
+                    Text("Multi-TCP is best for congested WiFi. Reliable UDP yields lower latency on high-quality networks.")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 6)
+            } header: {
+                Text("Connection Settings")
+                    .font(.footnote)
+                    .fontWeight(.bold)
+                    .foregroundColor(.secondary)
+            }
         }
         .listStyle(.sidebar)
     }

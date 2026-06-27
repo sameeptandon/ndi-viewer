@@ -24,7 +24,7 @@ public:
     void stopDiscovery();
 
     // Streaming API
-    bool connectTo(const char* sourceName);
+    bool connectTo(const char* sourceName, const char* preferredTransport);
     void disconnect();
 
     // Capture API

@@ -62,6 +62,7 @@ public class NDIConnectionManager: ObservableObject {
     @Published public var stats = NDIStats()
     @Published public var streamWidth: CGFloat = 16
     @Published public var streamHeight: CGFloat = 9
+    @Published public var preferredTransport: String = "multi-tcp"
 
     // Publisher for the latest frame data
     public let framePublisher = PassthroughSubject<(data: Data, width: Int, height: Int, stride: Int, timestampMs: Int64, isYUV: Bool), Never>()
@@ -89,7 +90,7 @@ public class NDIConnectionManager: ObservableObject {
     public func connect(to sourceName: String) {
         guard !sourceName.isEmpty else { return }
         
-        if wrapper.connect(to: sourceName) {
+        if wrapper.connect(to: sourceName, preferredTransport: preferredTransport) {
             isStreaming = true
             currentSource = sourceName
             audioPlayer.start()
@@ -174,6 +175,19 @@ public class NDIConnectionManager: ObservableObject {
                 renderLatencyMs: self.stats.renderLatencyMs,
                 bitrateMBs: rawStats["bitrateMBs"] as? Double ?? 0.0
             )
+        }
+    }
+
+    public func updateTransport(_ transport: String) {
+        guard transport != preferredTransport else { return }
+        self.preferredTransport = transport
+        if isStreaming {
+            let source = currentSource
+            disconnect()
+            // Wait 500ms to allow network sockets to clean up, then reconnect under new protocol
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.connect(to: source)
+            }
         }
     }
 }

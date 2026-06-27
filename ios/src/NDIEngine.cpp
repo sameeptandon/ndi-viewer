@@ -94,7 +94,7 @@ void NDIEngine::discoveryLoop() {
     }
 }
 
-bool NDIEngine::connectTo(const char* sourceName) {
+bool NDIEngine::connectTo(const char* sourceName, const char* preferredTransport) {
     std::lock_guard<std::mutex> lock(m_mutex);
     
     // Disconnect old receiver
@@ -110,9 +110,10 @@ bool NDIEngine::connectTo(const char* sourceName) {
     m_pReceiver = NDIlib_recv_create_v3(&recvSettings);
     if (!m_pReceiver) return false;
 
-    // Negotiate low-latency Multi-TCP transport (highly optimized for mesh WiFi)
+    // Negotiate preferred transport mode (e.g., "udp", "multi-tcp", "unicast-udp")
     NDIlib_metadata_frame_t transportMetadata;
-    transportMetadata.p_data = (char*)"<ndi_transport preferred=\"multi-tcp\"/>";
+    std::string transportXml = "<ndi_transport preferred=\"" + std::string(preferredTransport) + "\"/>";
+    transportMetadata.p_data = (char*)transportXml.c_str();
     NDIlib_recv_add_connection_metadata(m_pReceiver, &transportMetadata);
 
     // Resolve target source pointer

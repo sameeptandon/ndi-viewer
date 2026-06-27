@@ -71,7 +71,7 @@ struct MainDashboard: View {
                     
                     // Diagnostics HUD overlay
                     if showDiagnostics {
-                        DiagnosticsHUD(stats: manager.stats, sourceName: manager.currentSource)
+                        DiagnosticsHUD(stats: manager.stats, sourceName: manager.currentSource, preferredTransport: manager.preferredTransport)
                             .transition(.opacity.combined(with: .scale(scale: 0.95)))
                     }
                     
@@ -204,6 +204,16 @@ struct MainDashboard: View {
 struct DiagnosticsHUD: View {
     var stats: NDIStats
     var sourceName: String
+    var preferredTransport: String
+    
+    private var transportName: String {
+        switch preferredTransport {
+        case "multi-tcp": return "Multi-TCP"
+        case "udp": return "Reliable UDP"
+        case "tcp": return "Single TCP"
+        default: return "Multi-TCP"
+        }
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -246,7 +256,7 @@ struct DiagnosticsHUD: View {
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(.white)
                     .fontWeight(.bold)
-                Text("• Transport: Multi-TCP (Active)")
+                Text("• Transport: \(transportName) (Active)")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(.white)
                 Text("• Net Jitter (Transit Var): \(String(format: "%.1f", stats.jitterMs)) ms")

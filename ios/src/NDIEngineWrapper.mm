@@ -46,8 +46,8 @@
     m_discoveryCallback = nil;
 }
 
-- (BOOL)connectTo:(NSString *)sourceName {
-    return m_engine->connectTo([sourceName UTF8String]);
+- (BOOL)connectTo:(NSString *)sourceName preferredTransport:(NSString *)transport {
+    return m_engine->connectTo([sourceName UTF8String], [transport UTF8String]);
 }
 
 - (void)disconnect {
