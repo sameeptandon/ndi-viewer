@@ -62,7 +62,7 @@ public class NDIConnectionManager: ObservableObject {
     @Published public var stats = NDIStats()
     @Published public var streamWidth: CGFloat = 16
     @Published public var streamHeight: CGFloat = 9
-    @Published public var preferredTransport: String = "multi-tcp"
+    @Published public var preferredTransport: String = "udp"
 
     // Publisher for the latest frame data
     public let framePublisher = PassthroughSubject<(data: Data, width: Int, height: Int, stride: Int, timestampMs: Int64, isYUV: Bool), Never>()
