@@ -53,14 +53,15 @@ fragment float4 fragmentShader(VertexOutput in [[stage_in]],
     float4 color = colorTexture.sample(textureSampler, in.texCoords);
     
     if (isYUV != 0) {
-        float y = color.g;
-        float cr = color.r - 0.5;
-        float cb = color.b - 0.5;
+        // ITU-R BT.709 Limited Range (Studio Swing: Y: 16-235, Cb/Cr: 16-240) YUV-to-RGB matrix.
+        // This expands the dynamic range to full [0, 255] RGB, restoring deep blacks, whites, and color saturation.
+        float y = 1.164383 * (color.g - 0.062745); // (Y - 16/255) * (255 / 219)
+        float cr = color.r - 0.501961;             // Cr - 128/255
+        float cb = color.b - 0.501961;             // Cb - 128/255
         
-        // BT.709 YUV-to-RGB conversion matrix
-        float r = y + 1.5748 * cr;
-        float g = y - 0.1873 * cb - 0.4681 * cr;
-        float b = y + 1.8556 * cb;
+        float r = y + 1.792741 * cr;
+        float g = y - 0.213249 * cb - 0.532909 * cr;
+        float b = y + 2.112402 * cb;
         return float4(r, g, b, 1.0);
     } else {
         return color;
