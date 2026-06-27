@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <Metal/Metal.h>
 
 @interface NDIEngineWrapper : NSObject
 
@@ -8,7 +9,9 @@
 - (BOOL)connectTo:(NSString *)sourceName preferredTransport:(NSString *)transport;
 - (void)disconnect;
 
-- (void)startCaptureWithVideoCallback:(void (^)(NSData *data, NSInteger width, NSInteger height, NSInteger stride, int64_t timestampMs, BOOL isYUV))videoCallback
+- (void)setTargetTexture:(id<MTLTexture>)texture;
+
+- (void)startCaptureWithVideoCallback:(void (^)(NSInteger width, NSInteger height, NSInteger stride, int64_t timestampMs, BOOL isYUV))videoCallback
                         audioCallback:(void (^)(NSData *data, NSInteger samples, NSInteger channels, NSInteger sampleRate, NSInteger channelStrideBytes))audioCallback;
 - (void)stopCapture;
 

@@ -1,11 +1,14 @@
 #import "NDIEngineWrapper.h"
 #include "NDIEngine.h"
+#include <mutex>
 
 @implementation NDIEngineWrapper {
     NDIEngine *m_engine;
     void (^m_discoveryCallback)(NSArray<NSString *> *);
-    void (^m_videoCallback)(NSData *, NSInteger, NSInteger, NSInteger, int64_t, BOOL);
+    void (^m_videoCallback)(NSInteger, NSInteger, NSInteger, int64_t, BOOL);
     void (^m_audioCallback)(NSData *, NSInteger, NSInteger, NSInteger, NSInteger);
+    id<MTLTexture> m_targetTexture;
+    std::mutex m_textureMutex;
 }
 
 - (instancetype)init {
@@ -54,7 +57,12 @@
     m_engine->disconnect();
 }
 
-- (void)startCaptureWithVideoCallback:(void (^)(NSData *, NSInteger, NSInteger, NSInteger, int64_t, BOOL))videoCallback
+- (void)setTargetTexture:(id<MTLTexture>)texture {
+    std::lock_guard<std::mutex> lock(m_textureMutex);
+    m_targetTexture = texture;
+}
+
+- (void)startCaptureWithVideoCallback:(void (^)(NSInteger, NSInteger, NSInteger, int64_t, BOOL))videoCallback
                         audioCallback:(void (^)(NSData *, NSInteger, NSInteger, NSInteger, NSInteger))audioCallback {
     m_videoCallback = [videoCallback copy];
     m_audioCallback = [audioCallback copy];
@@ -63,9 +71,19 @@
     m_engine->startCapture([](const uint8_t* data, int width, int height, int stride, int64_t timestampMs, bool isYUV, void* context) {
         NDIEngineWrapper *thisWrapper = (__bridge NDIEngineWrapper *)context;
         if (thisWrapper && thisWrapper->m_videoCallback) {
-            NSInteger size = height * stride;
-            NSData *frameData = [NSData dataWithBytesNoCopy:(void*)data length:size freeWhenDone:NO];
-            thisWrapper->m_videoCallback(frameData, width, height, stride, timestampMs, isYUV);
+            // Upload directly to the registered Metal texture in the background NDI thread
+            {
+                std::lock_guard<std::mutex> lock(thisWrapper->m_textureMutex);
+                id<MTLTexture> texture = thisWrapper->m_targetTexture;
+                if (texture && [texture width] == width && [texture height] == height) {
+                    MTLRegion region = MTLRegionMake2D(0, 0, width, height);
+                    [texture replaceRegion:region
+                               mipmapLevel:0
+                                 withBytes:data
+                               bytesPerRow:stride];
+                }
+            }
+            thisWrapper->m_videoCallback(width, height, stride, timestampMs, isYUV);
         }
     }, [](const float* data, int samples, int channels, int sampleRate, int channelStrideBytes, void* context) {
         NDIEngineWrapper *thisWrapper = (__bridge NDIEngineWrapper *)context;
@@ -81,6 +99,10 @@
     m_engine->stopCapture();
     m_videoCallback = nil;
     m_audioCallback = nil;
+    {
+        std::lock_guard<std::mutex> lock(m_textureMutex);
+        m_targetTexture = nil;
+    }
 }
 
 - (NSDictionary<NSString *, id> *)getPerformanceStats {

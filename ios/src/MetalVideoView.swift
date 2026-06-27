@@ -119,7 +119,7 @@ public struct MetalVideoView: PlatformViewRepresentable {
         private var currentFrameIsYUV = false
         
         // Thread-safe state for storing incoming network frames
-        private var pendingFrame: (data: Data, width: Int, height: Int, stride: Int, isYUV: Bool)? = nil
+        private var pendingFrame: (width: Int, height: Int, stride: Int, isYUV: Bool)? = nil
         private let textureMutex = NSLock()
         
         func setupPipeline(with mtkView: MTKView) {
@@ -141,15 +141,39 @@ public struct MetalVideoView: PlatformViewRepresentable {
             }
         }
         
-        func subscribe(to publisher: PassthroughSubject<(data: Data, width: Int, height: Int, stride: Int, timestampMs: Int64, isYUV: Bool), Never>) {
+        func subscribe(to publisher: PassthroughSubject<(width: Int, height: Int, stride: Int, timestampMs: Int64, isYUV: Bool), Never>) {
             cancellable = publisher
                 .sink { [weak self] frame in
                     guard let self = self else { return }
                     
                     self.textureMutex.lock()
-                    self.pendingFrame = (data: frame.data, width: frame.width, height: frame.height, stride: frame.stride, isYUV: frame.isYUV)
+                    defer { self.textureMutex.unlock() }
+                    
                     self.latestFrameTimestampMs = frame.timestampMs
-                    self.textureMutex.unlock()
+                    self.currentFrameIsYUV = frame.isYUV
+                    
+                    let pixelFormat: MTLPixelFormat = frame.isYUV ? .bgrg422 : .bgra8Unorm
+                    
+                    // Create texture if dimensions or pixel format changed
+                    if self.texture == nil ||
+                       self.texture?.width != frame.width ||
+                       self.texture?.height != frame.height ||
+                       self.texture?.pixelFormat != pixelFormat {
+                        
+                        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                            pixelFormat: pixelFormat,
+                            width: frame.width,
+                            height: frame.height,
+                            mipmapped: false
+                        )
+                        descriptor.usage = [.shaderRead]
+                        self.texture = self.device?.makeTexture(descriptor: descriptor)
+                        
+                        // Register the new texture with the Connection Manager (and C++ bridge)
+                        self.manager?.setTargetTexture(self.texture)
+                    }
+                    
+                    self.pendingFrame = (width: frame.width, height: frame.height, stride: frame.stride, isYUV: frame.isYUV)
                 }
         }
         
@@ -157,8 +181,10 @@ public struct MetalVideoView: PlatformViewRepresentable {
         
         public func draw(in view: MTKView) {
             self.textureMutex.lock()
-            let frame = self.pendingFrame
+            let hasFrame = (self.pendingFrame != nil)
             let timestamp = self.latestFrameTimestampMs
+            let texture = self.texture
+            let isYUV = self.currentFrameIsYUV
             self.textureMutex.unlock()
             
             guard let drawable = view.currentDrawable,
@@ -169,7 +195,7 @@ public struct MetalVideoView: PlatformViewRepresentable {
             // Set clear color to black
             renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0.05, green: 0.05, blue: 0.07, alpha: 1.0)
             
-            guard let frame = frame else {
+            guard hasFrame, let tex = texture else {
                 // If no frame has arrived yet, just clear and present black
                 guard let commandBuffer = commandQueue.makeCommandBuffer(),
                       let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else { return }
@@ -179,46 +205,13 @@ public struct MetalVideoView: PlatformViewRepresentable {
                 return
             }
             
-            self.currentFrameIsYUV = frame.isYUV
-            let pixelFormat: MTLPixelFormat = frame.isYUV ? .bgrg422 : .bgra8Unorm
-            
-            // Upload the video frame directly to the recycled MTLTexture
-            if self.texture == nil ||
-               self.texture?.width != frame.width ||
-               self.texture?.height != frame.height ||
-               self.texture?.pixelFormat != pixelFormat {
-                
-                let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                    pixelFormat: pixelFormat,
-                    width: frame.width,
-                    height: frame.height,
-                    mipmapped: false
-                )
-                descriptor.usage = [.shaderRead]
-                self.texture = self.device?.makeTexture(descriptor: descriptor)
-            }
-            
-            let region = MTLRegionMake2D(0, 0, frame.width, frame.height)
-            frame.data.withUnsafeBytes { rawBufferPointer in
-                if let baseAddress = rawBufferPointer.baseAddress {
-                    self.texture?.replace(
-                        region: region,
-                        mipmapLevel: 0,
-                        withBytes: baseAddress,
-                        bytesPerRow: frame.stride
-                    )
-                }
-            }
-            
-            guard let texture = self.texture else { return }
-            
             guard let commandBuffer = commandQueue.makeCommandBuffer(),
                   let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else { return }
             
             encoder.setRenderPipelineState(pipelineState)
-            encoder.setFragmentTexture(texture, index: 0)
+            encoder.setFragmentTexture(tex, index: 0)
             
-            var isYUVVal: UInt32 = currentFrameIsYUV ? 1 : 0
+            var isYUVVal: UInt32 = isYUV ? 1 : 0
             encoder.setFragmentBytes(&isYUVVal, length: MemoryLayout<UInt32>.size, index: 0)
             
             // Draw full-screen quad (4 vertices mapped inside the vertex shader)

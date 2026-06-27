@@ -64,8 +64,8 @@ public class NDIConnectionManager: ObservableObject {
     @Published public var streamHeight: CGFloat = 9
     @Published public var preferredTransport: String = "udp"
 
-    // Publisher for the latest frame data
-    public let framePublisher = PassthroughSubject<(data: Data, width: Int, height: Int, stride: Int, timestampMs: Int64, isYUV: Bool), Never>()
+    // Publisher for the latest frame data (metadata only)
+    public let framePublisher = PassthroughSubject<(width: Int, height: Int, stride: Int, timestampMs: Int64, isYUV: Bool), Never>()
 
     public init() {
         startDiscovery()
@@ -124,10 +124,14 @@ public class NDIConnectionManager: ObservableObject {
     }
 
 
+    public func setTargetTexture(_ texture: MTLTexture?) {
+        wrapper.setTargetTexture(texture)
+    }
+
     private func startCapture() {
         wrapper.startCapture(
-            videoCallback: { [weak self] data, width, height, stride, timestampMs, isYUV in
-                guard let self = self, let data = data else { return }
+            videoCallback: { [weak self] width, height, stride, timestampMs, isYUV in
+                guard let self = self else { return }
 
                 DispatchQueue.main.async {
                     if self.streamWidth != CGFloat(width) || self.streamHeight != CGFloat(height) {
@@ -137,7 +141,6 @@ public class NDIConnectionManager: ObservableObject {
                 }
 
                 self.framePublisher.send((
-                    data: data,
                     width: width,
                     height: height,
                     stride: stride,
