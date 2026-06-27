@@ -175,6 +175,7 @@ public struct MetalVideoView: PlatformViewRepresentable {
                             mipmapped: false
                         )
                         descriptor.usage = [.shaderRead]
+                        descriptor.storageMode = .shared
                         self.texture = self.device?.makeTexture(descriptor: descriptor)
                         
                         // Register the new texture with the Connection Manager (and C++ bridge)
