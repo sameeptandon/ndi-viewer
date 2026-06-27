@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Configure target source files
 set(APP_RESOURCES AppIcon.icns)
 set_source_files_properties(${APP_RESOURCES} PROPERTIES
-    MACOSX_BUNDLE_CONTENT_DIRECTORY Resources
+    MACOSX_PACKAGE_LOCATION Resources
 )
 
 add_executable(ndi_viewer_ios MACOSX_BUNDLE
