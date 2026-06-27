@@ -48,6 +48,7 @@ public struct NDIStats {
     public var queueDepth: Int32 = 0
     public var jitterMs: Double = 0.0
     public var renderLatencyMs: Double = 0.0
+    public var bitrateMBs: Double = 0.0
 }
 
 public class NDIConnectionManager: ObservableObject {
@@ -170,7 +171,8 @@ public class NDIConnectionManager: ObservableObject {
                 droppedFrames: rawStats["droppedFrames"] as? Int64 ?? 0,
                 queueDepth: rawStats["queueDepth"] as? Int32 ?? 0,
                 jitterMs: rawStats["jitterMs"] as? Double ?? 0.0,
-                renderLatencyMs: self.stats.renderLatencyMs
+                renderLatencyMs: self.stats.renderLatencyMs,
+                bitrateMBs: rawStats["bitrateMBs"] as? Double ?? 0.0
             )
         }
     }

@@ -174,6 +174,7 @@ void NDIEngine::stopCapture() {
 void NDIEngine::captureLoop() {
     std::vector<int64_t> arrivalTimestamps;
     int64_t lastStatsTime = getCurrentTimeMs();
+    uint64_t intervalBytes = 0;
     double sourceFps = 0.0;
 
     while (m_captureRunning) {
@@ -199,6 +200,7 @@ void NDIEngine::captureLoop() {
 
         if (type == NDIlib_frame_type_video) {
             frameProcessed = true;
+            intervalBytes += videoFrame.line_stride_in_bytes * videoFrame.yres;
             
             // Flush any newer frames in NDI's receiver queue to stay in sync with the live feed
             NDIlib_video_frame_v2_t nextVideoFrame;
@@ -208,11 +210,13 @@ void NDIEngine::captureLoop() {
             
             while (NDIlib_recv_capture_v3(pRecv, &nextVideoFrame, &nextAudioFrame, &nextMetadataFrame, 0) != NDIlib_frame_type_none) {
                 if (nextVideoFrame.p_data) {
+                    intervalBytes += nextVideoFrame.line_stride_in_bytes * nextVideoFrame.yres;
                     NDIlib_recv_free_video_v2(pRecv, &videoFrame);
                     videoFrame = nextVideoFrame;
                     gotNewerVideo = true;
                 }
                 if (nextAudioFrame.p_data) {
+                    intervalBytes += nextAudioFrame.no_samples * nextAudioFrame.no_channels * sizeof(float);
                     // Do NOT drop audio frames to prevent crackling/stuttering
                     int sampleRate = nextAudioFrame.sample_rate;
                     int channels = nextAudioFrame.no_channels;
@@ -271,6 +275,7 @@ void NDIEngine::captureLoop() {
         }
         else if (type == NDIlib_frame_type_audio) {
             frameProcessed = true;
+            intervalBytes += audioFrame.no_samples * audioFrame.no_channels * sizeof(float);
             int sampleRate = audioFrame.sample_rate;
             int channels = audioFrame.no_channels;
             int samples = audioFrame.no_samples;
@@ -297,11 +302,9 @@ void NDIEngine::captureLoop() {
         int64_t now = getCurrentTimeMs();
         if (now - lastStatsTime > 500) {
             double captureFps = 0.0;
-            if (arrivalTimestamps.size() > 1) {
-                double dur = (arrivalTimestamps.back() - arrivalTimestamps.front()) / 1000.0;
-                if (dur > 0.0) {
-                    captureFps = (arrivalTimestamps.size() - 1) / dur;
-                }
+            double dur = (now - lastStatsTime) / 1000.0;
+            if (arrivalTimestamps.size() > 1 && dur > 0.0) {
+                captureFps = (arrivalTimestamps.size() - 1) / dur;
             }
 
             NDIlib_recv_performance_t total;
@@ -313,12 +316,19 @@ void NDIEngine::captureLoop() {
 
             std::lock_guard<std::mutex> statsLock(m_statsMutex);
             double avgJitter = m_jitterHistory.empty() ? 0.0 : (m_jitterSum / m_jitterHistory.size());
+            double bitrateMBs = 0.0;
+            if (dur > 0.0) {
+                bitrateMBs = (double)intervalBytes / dur / (1024.0 * 1024.0);
+            }
+            intervalBytes = 0; // Reset for next interval
+
             m_stats = {
                 captureFps,
                 total.video_frames,
                 dropped.video_frames,
                 queue.video_frames,
-                avgJitter
+                avgJitter,
+                bitrateMBs
             };
 
             lastStatsTime = now;

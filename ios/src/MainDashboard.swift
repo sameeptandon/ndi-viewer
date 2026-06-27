@@ -242,9 +242,16 @@ struct DiagnosticsHUD: View {
                         .foregroundColor(wifiColor)
                 }
                 
-                Text("• Net Jitter (Transit Var): \(String(format: "%.1f", stats.jitterMs)) ms")
+                Text("• Bandwidth: \(String(format: "%.1f", stats.bitrateMBs)) MB/s")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(.white)
+                    .fontWeight(.bold)
+                Text("• Transport: Multi-TCP (Active)")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.white)
+                Text("• Net Jitter (Transit Var): \(String(format: "%.1f", stats.jitterMs)) ms")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.secondary)
                 Text("• Capture Rate: \(String(format: "%.1f", stats.captureFps)) fps")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(.secondary)

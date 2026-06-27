@@ -90,7 +90,8 @@
         @"totalFrames": @(stats.totalFrames),
         @"droppedFrames": @(stats.droppedFrames),
         @"queueDepth": @(stats.queueDepth),
-        @"jitterMs": @(stats.jitterMs)
+        @"jitterMs": @(stats.jitterMs),
+        @"bitrateMBs": @(stats.bitrateMBs)
     };
 }
 

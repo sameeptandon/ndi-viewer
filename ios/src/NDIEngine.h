@@ -40,6 +40,7 @@ public:
         int64_t droppedFrames;
         int queueDepth;
         double jitterMs;
+        double bitrateMBs;
     };
     PerformanceStats getPerformanceStats();
 
