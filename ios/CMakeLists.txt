@@ -5,6 +5,11 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Configure target source files
+set(APP_RESOURCES AppIcon.icns)
+set_source_files_properties(${APP_RESOURCES} PROPERTIES
+    MACOSX_BUNDLE_CONTENT_DIRECTORY Resources
+)
+
 add_executable(ndi_viewer_ios MACOSX_BUNDLE
     src/NDIViewerApp.swift
     src/MainDashboard.swift
@@ -17,6 +22,7 @@ add_executable(ndi_viewer_ios MACOSX_BUNDLE
     src/NDIEngine.cpp
     src/NDIEngineWrapper.h
     src/NDIEngineWrapper.mm
+    ${APP_RESOURCES}
 )
 
 # Specify Include Directories for C++ compiler
@@ -84,6 +90,7 @@ endif()
 # Configure Xcode targets and build settings
 set_target_properties(ndi_viewer_ios PROPERTIES
     MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist
+    MACOSX_BUNDLE_ICON_FILE AppIcon.icns
     XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.ndi-viewer.ios"
     XCODE_ATTRIBUTE_SWIFT_COMPILER_CXX_INTEROPERABILITY "default"
     XCODE_ATTRIBUTE_SWIFT_OBJC_BRIDGING_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/src/BridgingHeader.h"
