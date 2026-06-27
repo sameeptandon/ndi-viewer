@@ -195,8 +195,8 @@ void NDIEngine::captureLoop() {
         NDIlib_audio_frame_v3_t audioFrame;
         NDIlib_metadata_frame_t metadataFrame;
 
-        // Block for up to 8ms waiting for next frame, avoiding busy polling
-        NDIlib_frame_type_e type = NDIlib_recv_capture_v3(pRecv, &videoFrame, &audioFrame, &metadataFrame, 8);
+        // Poll immediately (0ms timeout) without spin-waiting
+        NDIlib_frame_type_e type = NDIlib_recv_capture_v3(pRecv, &videoFrame, &audioFrame, &metadataFrame, 0);
 
         bool frameProcessed = false;
 
@@ -352,7 +352,7 @@ void NDIEngine::captureLoop() {
         }
 
         if (!frameProcessed) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(4));
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
     }
 }
