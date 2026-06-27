@@ -21,8 +21,9 @@ NDIEngine::NDIEngine()
     , m_captureContext(nullptr)
     , m_lastFrameTime(0)
     , m_jitterSum(0.0)
+    , m_lastWidth(1920)
 {
-    m_stats = {0.0, 0, 0, 0, 0.0};
+    m_stats = {0.0, 0, 0, 0, 0.0, 0.0};
 }
 
 NDIEngine::~NDIEngine() {
@@ -272,6 +273,7 @@ void NDIEngine::captureLoop() {
             if (videoFrame.p_data && m_videoCallback) {
                 bool isYUV = (videoFrame.FourCC == NDIlib_FourCC_type_UYVY);
                 m_videoCallback(videoFrame.p_data, videoFrame.xres, videoFrame.yres, videoFrame.line_stride_in_bytes, nowMs, isYUV, m_captureContext);
+                m_lastWidth = videoFrame.xres;
             }
 
             NDIlib_recv_free_video_v2(pRecv, &videoFrame);
@@ -324,7 +326,15 @@ void NDIEngine::captureLoop() {
             double dur = (now - lastStatsTime) / 1000.0;
             double bitrateMBs = 0.0;
             if (dur > 0.0) {
-                bitrateMBs = (double)intervalBytes / dur / (1024.0 * 1024.0);
+                double uncompressedBitrate = (double)intervalBytes / dur / (1024.0 * 1024.0);
+                
+                // Scale uncompressed YUV memory bandwidth to estimated compressed network bandwidth
+                // NDI SpeedHQ typically compresses 1080p by ~15x and 4K by ~30x to maintain visual quality
+                double compressionFactor = 15.0;
+                if (m_lastWidth > 1920) {
+                    compressionFactor = 30.0;
+                }
+                bitrateMBs = uncompressedBitrate / compressionFactor;
             }
             intervalBytes = 0; // Reset for next interval
 

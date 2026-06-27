@@ -74,4 +74,5 @@ private:
     int64_t m_lastFrameTime;
     std::vector<double> m_jitterHistory;
     double m_jitterSum;
+    int m_lastWidth;
 };
