@@ -142,9 +142,15 @@ public class NDIConnectionManager: ObservableObject {
                     timestampMs: timestampMs
                 ))
             },
-            audioCallback: { [weak self] data, samples, channels, sampleRate in
+            audioCallback: { [weak self] data, samples, channels, sampleRate, channelStrideBytes in
                 guard let self = self, let data = data else { return }
-                self.audioPlayer.playPCM(data: data, samples: samples, channels: channels, sampleRate: sampleRate)
+                self.audioPlayer.playPCM(
+                    data: data,
+                    samples: samples,
+                    channels: channels,
+                    sampleRate: sampleRate,
+                    channelStrideBytes: channelStrideBytes
+                )
             }
         )
     }

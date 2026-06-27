@@ -147,7 +147,7 @@ void NDIEngine::disconnect() {
 }
 
 void NDIEngine::startCapture(void (*videoCallback)(const uint8_t* data, int width, int height, int stride, int64_t timestampMs, void* context),
-                             void (*audioCallback)(const int16_t* data, int samples, int channels, int sampleRate, void* context),
+                             void (*audioCallback)(const float* data, int samples, int channels, int sampleRate, int channelStrideBytes, void* context),
                              void* context) {
     if (m_captureRunning) return;
 
@@ -234,21 +234,14 @@ void NDIEngine::captureLoop() {
             int samples = audioFrame.no_samples;
 
             if (samples > 0 && channels > 0 && audioFrame.p_data && m_audioCallback) {
-                int strideFloats = audioFrame.channel_stride_in_bytes / sizeof(float);
-                std::vector<int16_t> interleaved(samples * channels);
-                int16_t* pOut = interleaved.data();
-
-                for (int s = 0; s < samples; ++s) {
-                    for (int c = 0; c < channels; ++c) {
-                        float* pChan = reinterpret_cast<float*>(audioFrame.p_data) + c * strideFloats;
-                        float val = pChan[s];
-                        if (val < -1.0f) val = -1.0f;
-                        else if (val > 1.0f) val = 1.0f;
-                        *pOut++ = static_cast<int16_t>(val * 32767.f);
-                    }
-                }
-
-                m_audioCallback(interleaved.data(), samples, channels, sampleRate, m_captureContext);
+                m_audioCallback(
+                    reinterpret_cast<const float*>(audioFrame.p_data),
+                    samples,
+                    channels,
+                    sampleRate,
+                    audioFrame.channel_stride_in_bytes,
+                    m_captureContext
+                );
             }
 
             NDIlib_recv_free_audio_v3(pRecv, &audioFrame);

@@ -5,7 +5,7 @@
     NDIEngine *m_engine;
     void (^m_discoveryCallback)(NSArray<NSString *> *);
     void (^m_videoCallback)(NSData *, NSInteger, NSInteger, NSInteger, int64_t);
-    void (^m_audioCallback)(NSData *, NSInteger, NSInteger, NSInteger);
+    void (^m_audioCallback)(NSData *, NSInteger, NSInteger, NSInteger, NSInteger);
 }
 
 - (instancetype)init {
@@ -55,7 +55,7 @@
 }
 
 - (void)startCaptureWithVideoCallback:(void (^)(NSData *, NSInteger, NSInteger, NSInteger, int64_t))videoCallback
-                        audioCallback:(void (^)(NSData *, NSInteger, NSInteger, NSInteger))audioCallback {
+                        audioCallback:(void (^)(NSData *, NSInteger, NSInteger, NSInteger, NSInteger))audioCallback {
     m_videoCallback = [videoCallback copy];
     m_audioCallback = [audioCallback copy];
     
@@ -67,12 +67,12 @@
             NSData *frameData = [NSData dataWithBytesNoCopy:(void*)data length:size freeWhenDone:NO];
             thisWrapper->m_videoCallback(frameData, width, height, stride, timestampMs);
         }
-    }, [](const int16_t* data, int samples, int channels, int sampleRate, void* context) {
+    }, [](const float* data, int samples, int channels, int sampleRate, int channelStrideBytes, void* context) {
         NDIEngineWrapper *thisWrapper = (__bridge NDIEngineWrapper *)context;
         if (thisWrapper && thisWrapper->m_audioCallback) {
-            NSInteger size = samples * channels * sizeof(int16_t);
+            NSInteger size = channels * channelStrideBytes;
             NSData *audioData = [NSData dataWithBytes:(void*)data length:size];
-            thisWrapper->m_audioCallback(audioData, samples, channels, sampleRate);
+            thisWrapper->m_audioCallback(audioData, samples, channels, sampleRate, channelStrideBytes);
         }
     }, selfPointer);
 }

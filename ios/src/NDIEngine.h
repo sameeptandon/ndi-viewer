@@ -29,7 +29,7 @@ public:
 
     // Capture API
     void startCapture(void (*videoCallback)(const uint8_t* data, int width, int height, int stride, int64_t timestampMs, void* context),
-                      void (*audioCallback)(const int16_t* data, int samples, int channels, int sampleRate, void* context),
+                      void (*audioCallback)(const float* data, int samples, int channels, int sampleRate, int channelStrideBytes, void* context),
                       void* context);
     void stopCapture();
 
@@ -64,7 +64,7 @@ private:
     void* m_sourcesContext;
 
     void (*m_videoCallback)(const uint8_t* data, int width, int height, int stride, int64_t timestampMs, void* context);
-    void (*m_audioCallback)(const int16_t* data, int samples, int channels, int sampleRate, void* context);
+    void (*m_audioCallback)(const float* data, int samples, int channels, int sampleRate, int channelStrideBytes, void* context);
     void* m_captureContext;
 
     // Diagnostics metrics

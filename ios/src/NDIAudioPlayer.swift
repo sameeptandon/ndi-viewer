@@ -12,10 +12,10 @@ public class NDIAudioPlayer {
         
         // Connect with a default format to ensure audio graph validity on startup
         if let defaultFormat = AVAudioFormat(
-            commonFormat: .pcmFormatInt16,
+            commonFormat: .pcmFormatFloat32,
             sampleRate: 48000.0,
             channels: 2,
-            interleaved: true
+            interleaved: false
         ) {
             audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: defaultFormat)
             self.audioFormat = defaultFormat
@@ -64,7 +64,7 @@ public class NDIAudioPlayer {
         }
     }
 
-    public func playPCM(data: Data, samples: Int, channels: Int, sampleRate: Int) {
+    public func playPCM(data: Data, samples: Int, channels: Int, sampleRate: Int, channelStrideBytes: Int) {
         guard samples > 0, channels > 0 else { return }
         
         queue.async { [weak self] () -> Void in
@@ -76,10 +76,10 @@ public class NDIAudioPlayer {
                self.audioFormat?.channelCount != AVAudioChannelCount(channels) {
                 
                 guard let newFormat = AVAudioFormat(
-                    commonFormat: .pcmFormatInt16,
+                    commonFormat: .pcmFormatFloat32,
                     sampleRate: Double(sampleRate),
                     channels: AVAudioChannelCount(channels),
-                    interleaved: true
+                    interleaved: false
                 ) else {
                     print("Audio Error: Failed to create AVAudioFormat")
                     return
@@ -99,18 +99,21 @@ public class NDIAudioPlayer {
                 self.playerNode.play()
             }
 
-            // Allocate buffer
+            // Allocate non-interleaved float32 buffer
             guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples)) else {
                 print("Audio Error: Failed to allocate AVAudioPCMBuffer")
                 return
             }
             buffer.frameLength = AVAudioFrameCount(samples)
 
-            // Copy raw memory
-            if let dest = buffer.int16ChannelData?[0] {
-                data.withUnsafeBytes { rawBuffer in
-                    if let source = rawBuffer.baseAddress {
-                        memcpy(dest, source, samples * channels * MemoryLayout<Int16>.size)
+            // Copy planar float32 channels
+            data.withUnsafeBytes { rawBuffer in
+                guard let baseAddress = rawBuffer.baseAddress else { return }
+                
+                for c in 0..<channels {
+                    if let dest = buffer.floatChannelData?[c] {
+                        let source = baseAddress.advanced(by: c * channelStrideBytes)
+                        memcpy(dest, source, samples * MemoryLayout<Float>.size)
                     }
                 }
             }
