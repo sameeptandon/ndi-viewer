@@ -6,6 +6,39 @@ struct MainDashboard: View {
     @State private var showDiagnostics = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     
+    @State private var controlsVisible = true
+    @State private var autoHideTask: Task<Void, Never>? = nil
+    #if os(macOS)
+    @State private var isFullscreen = false
+    #else
+    private let isFullscreen = false
+    #endif
+
+    private func resetAutoHideTimer() {
+        autoHideTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.25)) {
+            controlsVisible = true
+            #if os(macOS)
+            NSCursor.unhide()
+            #endif
+        }
+        
+        guard isFullscreen else { return }
+        
+        autoHideTask = Task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.25)) {
+                controlsVisible = false
+                #if os(macOS)
+                if isFullscreen {
+                    NSCursor.hide()
+                }
+                #endif
+            }
+        }
+    }
+    
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(manager: manager, selectedSource: $selectedSource)
@@ -32,11 +65,16 @@ struct MainDashboard: View {
                             }
                             #endif
                         }
+                        .onTapGesture(count: 1) {
+                            resetAutoHideTimer()
+                        }
                     
                     // Diagnostics HUD overlay
                     if showDiagnostics {
                         DiagnosticsHUD(stats: manager.stats, sourceName: manager.currentSource)
                             .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                            .opacity(controlsVisible ? 1.0 : 0.0)
+                            .allowsHitTesting(controlsVisible)
                     }
                     
                     // Top-right controls overlay
@@ -63,6 +101,7 @@ struct MainDashboard: View {
                                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                         showDiagnostics.toggle()
                                     }
+                                    resetAutoHideTimer()
                                 }) {
                                     Image(systemName: showDiagnostics ? "chart.bar.xaxis" : "chart.bar")
                                         .font(.system(size: 16, weight: .semibold))
@@ -90,6 +129,8 @@ struct MainDashboard: View {
                         }
                         Spacer()
                     }
+                    .opacity(controlsVisible ? 1.0 : 0.0)
+                    .allowsHitTesting(controlsVisible)
                 } else {
                     // Empty/Idle State
                     VStack(spacing: 20) {
@@ -131,7 +172,33 @@ struct MainDashboard: View {
                 columnVisibility = isStreaming ? .detailOnly : .all
             }
             #endif
+            
+            if !isStreaming {
+                autoHideTask?.cancel()
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    controlsVisible = true
+                    #if os(macOS)
+                    NSCursor.unhide()
+                    #endif
+                }
+            } else {
+                resetAutoHideTimer()
+            }
         }
+        #if os(macOS)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+            isFullscreen = true
+            resetAutoHideTimer()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+            isFullscreen = false
+            autoHideTask?.cancel()
+            withAnimation(.easeInOut(duration: 0.25)) {
+                controlsVisible = true
+                NSCursor.unhide()
+            }
+        }
+        #endif
     }
 }
 
