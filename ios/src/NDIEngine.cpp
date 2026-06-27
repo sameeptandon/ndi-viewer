@@ -109,6 +109,11 @@ bool NDIEngine::connectTo(const char* sourceName) {
     m_pReceiver = NDIlib_recv_create_v3(&recvSettings);
     if (!m_pReceiver) return false;
 
+    // Negotiate low-latency Multi-TCP transport (highly optimized for mesh WiFi)
+    NDIlib_metadata_frame_t transportMetadata;
+    transportMetadata.p_data = (char*)"<ndi_transport preferred=\"multi-tcp\"/>";
+    NDIlib_recv_add_connection_metadata(m_pReceiver, &transportMetadata);
+
     // Resolve target source pointer
     uint32_t numSources = 0;
     const NDIlib_source_t* pSources = NDIlib_find_get_current_sources(m_pFinder, &numSources);
@@ -187,12 +192,48 @@ void NDIEngine::captureLoop() {
         NDIlib_audio_frame_v3_t audioFrame;
         NDIlib_metadata_frame_t metadataFrame;
 
-        NDIlib_frame_type_e type = NDIlib_recv_capture_v3(pRecv, &videoFrame, &audioFrame, &metadataFrame, 0);
+        // Block for up to 8ms waiting for next frame, avoiding busy polling
+        NDIlib_frame_type_e type = NDIlib_recv_capture_v3(pRecv, &videoFrame, &audioFrame, &metadataFrame, 8);
 
         bool frameProcessed = false;
 
         if (type == NDIlib_frame_type_video) {
             frameProcessed = true;
+            
+            // Flush any newer frames in NDI's receiver queue to stay in sync with the live feed
+            NDIlib_video_frame_v2_t nextVideoFrame;
+            NDIlib_audio_frame_v3_t nextAudioFrame;
+            NDIlib_metadata_frame_t nextMetadataFrame;
+            bool gotNewerVideo = false;
+            
+            while (NDIlib_recv_capture_v3(pRecv, &nextVideoFrame, &nextAudioFrame, &nextMetadataFrame, 0) != NDIlib_frame_type_none) {
+                if (nextVideoFrame.p_data) {
+                    NDIlib_recv_free_video_v2(pRecv, &videoFrame);
+                    videoFrame = nextVideoFrame;
+                    gotNewerVideo = true;
+                }
+                if (nextAudioFrame.p_data) {
+                    // Do NOT drop audio frames to prevent crackling/stuttering
+                    int sampleRate = nextAudioFrame.sample_rate;
+                    int channels = nextAudioFrame.no_channels;
+                    int samples = nextAudioFrame.no_samples;
+                    if (samples > 0 && channels > 0 && m_audioCallback) {
+                        m_audioCallback(
+                            reinterpret_cast<const float*>(nextAudioFrame.p_data),
+                            samples,
+                            channels,
+                            sampleRate,
+                            nextAudioFrame.channel_stride_in_bytes,
+                            m_captureContext
+                        );
+                    }
+                    NDIlib_recv_free_audio_v3(pRecv, &nextAudioFrame);
+                }
+                if (nextMetadataFrame.p_data) {
+                    NDIlib_recv_free_metadata(pRecv, &nextMetadataFrame);
+                }
+            }
+            
             int64_t nowMs = getCurrentTimeMs();
 
             if (videoFrame.frame_rate_D > 0) {

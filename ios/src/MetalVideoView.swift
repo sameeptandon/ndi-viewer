@@ -1,6 +1,7 @@
 import SwiftUI
 import MetalKit
 import Combine
+import CoreVideo
 
 #if os(macOS)
 import AppKit
@@ -94,9 +95,14 @@ public struct MetalVideoView: PlatformViewRepresentable {
         mtkView.colorPixelFormat = .bgra8Unorm
         mtkView.framebufferOnly = true
         
-        // Manual rendering mode (only render when new frames arrive)
-        mtkView.isPaused = true
-        mtkView.enableSetNeedsDisplay = false
+        // VSYNC-aligned render loop: MTKView will render continuously at display refresh rate
+        mtkView.isPaused = false
+        mtkView.enableSetNeedsDisplay = true
+        #if os(macOS)
+        mtkView.preferredFramesPerSecond = 120 // Target high-refresh rate on macOS
+        #else
+        mtkView.preferredFramesPerSecond = 60
+        #endif
         mtkView.delegate = context.coordinator
         
         context.coordinator.manager = manager
@@ -116,16 +122,22 @@ public struct MetalVideoView: PlatformViewRepresentable {
         private var commandQueue: MTLCommandQueue?
         private var pipelineState: MTLRenderPipelineState?
         private var texture: MTLTexture?
+        private var textureCache: CVMetalTextureCache? = nil
         private var cancellable: AnyCancellable?
         private var latestFrameTimestampMs: Int64 = 0
         private var currentFrameIsYUV = false
         
+        // Thread-safe state for storing incoming network frames
+        private var pendingFrame: (data: Data, width: Int, height: Int, stride: Int, isYUV: Bool)? = nil
         private let textureMutex = NSLock()
         
         func setupPipeline(with mtkView: MTKView) {
             guard let device = mtkView.device else { return }
             self.device = device
             self.commandQueue = device.makeCommandQueue()
+            
+            // Initialize CoreVideo Metal Texture Cache for hardware zero-copy texture mapping
+            CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, device, nil, &self.textureCache)
             
             // Compile Metal shaders dynamically at runtime
             do {
@@ -143,67 +155,131 @@ public struct MetalVideoView: PlatformViewRepresentable {
         
         func subscribe(to publisher: PassthroughSubject<(data: Data, width: Int, height: Int, stride: Int, timestampMs: Int64, isYUV: Bool), Never>, view: MTKView) {
             cancellable = publisher
-                .sink { [weak self, weak view] frame in
-                    guard let self = self, let view = view else { return }
+                .sink { [weak self] frame in
+                    guard let self = self else { return }
                     
                     self.textureMutex.lock()
-                    defer { self.textureMutex.unlock() }
-                    
+                    self.pendingFrame = (data: frame.data, width: frame.width, height: frame.height, stride: frame.stride, isYUV: frame.isYUV)
                     self.latestFrameTimestampMs = frame.timestampMs
-                    self.currentFrameIsYUV = frame.isYUV
-                    
-                    let pixelFormat: MTLPixelFormat = frame.isYUV ? .bgrg422 : .bgra8Unorm
-                    
-                    // Create texture if dimensions or pixel format changed
-                    if self.texture == nil ||
-                       self.texture?.width != frame.width ||
-                       self.texture?.height != frame.height ||
-                       self.texture?.pixelFormat != pixelFormat {
-                        
-                        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                            pixelFormat: pixelFormat,
-                            width: frame.width,
-                            height: frame.height,
-                            mipmapped: false
-                        )
-                        descriptor.usage = [.shaderRead]
-                        self.texture = self.device?.makeTexture(descriptor: descriptor)
-                    }
-                    
-                    // Upload raw frame data directly to the GPU texture
-                    let region = MTLRegionMake2D(0, 0, frame.width, frame.height)
-                    frame.data.withUnsafeBytes { rawBufferPointer in
-                        if let baseAddress = rawBufferPointer.baseAddress {
-                            self.texture?.replace(
-                                region: region,
-                                mipmapLevel: 0,
-                                withBytes: baseAddress,
-                                bytesPerRow: frame.stride
-                            )
-                        }
-                    }
-                    
-                    // Force the MTKView to draw immediately
-                    DispatchQueue.main.async {
-                        view.draw()
-                    }
+                    self.textureMutex.unlock()
                 }
         }
         
         public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
         
         public func draw(in view: MTKView) {
-            textureMutex.lock()
-            defer { textureMutex.unlock() }
+            self.textureMutex.lock()
+            let frame = self.pendingFrame
+            let timestamp = self.latestFrameTimestampMs
+            self.textureMutex.unlock()
             
             guard let drawable = view.currentDrawable,
                   let renderPassDescriptor = view.currentRenderPassDescriptor,
                   let pipelineState = pipelineState,
-                  let commandQueue = commandQueue,
-                  let texture = texture else { return }
+                  let commandQueue = commandQueue else { return }
             
             // Set clear color to black
             renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0.05, green: 0.05, blue: 0.07, alpha: 1.0)
+            
+            guard let frame = frame else {
+                // If no frame has arrived yet, just clear and present black
+                guard let commandBuffer = commandQueue.makeCommandBuffer(),
+                      let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else { return }
+                encoder.endEncoding()
+                commandBuffer.present(drawable)
+                commandBuffer.commit()
+                return
+            }
+            
+            self.currentFrameIsYUV = frame.isYUV
+            let pixelFormat: MTLPixelFormat = frame.isYUV ? .bgrg422 : .bgra8Unorm
+            
+            // Map the video frame using CoreVideo zero-copy texture cache mapping if cache is available
+            if let cache = self.textureCache {
+                var pixelBuffer: CVPixelBuffer? = nil
+                let pixelFormatType: OSType = frame.isYUV ? kCVPixelFormatType_422YpCbCr8 : kCVPixelFormatType_32BGRA
+                
+                let attrs = [
+                    kCVPixelBufferMetalCompatibilityKey: true
+                ] as CFDictionary
+                
+                let status = CVPixelBufferCreate(
+                    kCFAllocatorDefault,
+                    frame.width,
+                    frame.height,
+                    pixelFormatType,
+                    attrs,
+                    &pixelBuffer
+                )
+                
+                if status == kCVReturnSuccess, let pb = pixelBuffer {
+                    CVPixelBufferLockBaseAddress(pb, CVPixelBufferLockFlags(rawValue: 0))
+                    if let destAddr = CVPixelBufferGetBaseAddress(pb) {
+                        let bytesPerRow = CVPixelBufferGetBytesPerRow(pb)
+                        frame.data.withUnsafeBytes { rawBuffer in
+                            if let srcAddr = rawBuffer.baseAddress {
+                                if frame.stride == bytesPerRow {
+                                    memcpy(destAddr, srcAddr, frame.height * frame.stride)
+                                } else {
+                                    for y in 0..<frame.height {
+                                        let srcRow = srcAddr.advanced(by: y * frame.stride)
+                                        let destRow = destAddr.advanced(by: y * bytesPerRow)
+                                        memcpy(destRow, srcRow, min(frame.stride, bytesPerRow))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    CVPixelBufferUnlockBaseAddress(pb, CVPixelBufferLockFlags(rawValue: 0))
+                    
+                    var cvMetalTexture: CVMetalTexture? = nil
+                    let cacheStatus = CVMetalTextureCacheCreateTextureFromImage(
+                        kCFAllocatorDefault,
+                        cache,
+                        pb,
+                        nil,
+                        pixelFormat,
+                        frame.width,
+                        frame.height,
+                        0,
+                        &cvMetalTexture
+                    )
+                    
+                    if cacheStatus == kCVReturnSuccess, let cvt = cvMetalTexture {
+                        self.texture = CVMetalTextureGetTexture(cvt)
+                    }
+                }
+            } else {
+                // Fallback to traditional MTLTexture allocation and replace (direct copy)
+                if self.texture == nil ||
+                   self.texture?.width != frame.width ||
+                   self.texture?.height != frame.height ||
+                   self.texture?.pixelFormat != pixelFormat {
+                    
+                    let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                        pixelFormat: pixelFormat,
+                        width: frame.width,
+                        height: frame.height,
+                        mipmapped: false
+                    )
+                    descriptor.usage = [.shaderRead]
+                    self.texture = self.device?.makeTexture(descriptor: descriptor)
+                }
+                
+                let region = MTLRegionMake2D(0, 0, frame.width, frame.height)
+                frame.data.withUnsafeBytes { rawBufferPointer in
+                    if let baseAddress = rawBufferPointer.baseAddress {
+                        self.texture?.replace(
+                            region: region,
+                            mipmapLevel: 0,
+                            withBytes: baseAddress,
+                            bytesPerRow: frame.stride
+                        )
+                    }
+                }
+            }
+            
+            guard let texture = self.texture else { return }
             
             guard let commandBuffer = commandQueue.makeCommandBuffer(),
                   let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else { return }
@@ -223,7 +299,7 @@ public struct MetalVideoView: PlatformViewRepresentable {
             
             // Calculate and publish rendering latency
             let now = Int64(Date().timeIntervalSince1970 * 1000)
-            let latency = Double(now - latestFrameTimestampMs)
+            let latency = Double(now - timestamp)
             if latency >= 0 && latency < 5000 {
                 DispatchQueue.main.async { [weak self] in
                     self?.manager?.updateRenderLatency(latency)
