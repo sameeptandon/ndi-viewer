@@ -206,16 +206,19 @@ void NDIEngine::captureLoop() {
             NDIlib_video_frame_v2_t nextVideoFrame;
             NDIlib_audio_frame_v3_t nextAudioFrame;
             NDIlib_metadata_frame_t nextMetadataFrame;
-            bool gotNewerVideo = false;
             
-            while (NDIlib_recv_capture_v3(pRecv, &nextVideoFrame, &nextAudioFrame, &nextMetadataFrame, 0) != NDIlib_frame_type_none) {
-                if (nextVideoFrame.p_data) {
+            while (true) {
+                NDIlib_frame_type_e nextType = NDIlib_recv_capture_v3(pRecv, &nextVideoFrame, &nextAudioFrame, &nextMetadataFrame, 0);
+                if (nextType == NDIlib_frame_type_none) {
+                    break;
+                }
+                
+                if (nextType == NDIlib_frame_type_video) {
                     intervalBytes += nextVideoFrame.line_stride_in_bytes * nextVideoFrame.yres;
                     NDIlib_recv_free_video_v2(pRecv, &videoFrame);
                     videoFrame = nextVideoFrame;
-                    gotNewerVideo = true;
                 }
-                if (nextAudioFrame.p_data) {
+                else if (nextType == NDIlib_frame_type_audio) {
                     intervalBytes += nextAudioFrame.no_samples * nextAudioFrame.no_channels * sizeof(float);
                     // Do NOT drop audio frames to prevent crackling/stuttering
                     int sampleRate = nextAudioFrame.sample_rate;
@@ -233,7 +236,7 @@ void NDIEngine::captureLoop() {
                     }
                     NDIlib_recv_free_audio_v3(pRecv, &nextAudioFrame);
                 }
-                if (nextMetadataFrame.p_data) {
+                else if (nextType == NDIlib_frame_type_metadata) {
                     NDIlib_recv_free_metadata(pRecv, &nextMetadataFrame);
                 }
             }
