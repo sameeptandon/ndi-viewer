@@ -302,9 +302,11 @@ void NDIEngine::captureLoop() {
         int64_t now = getCurrentTimeMs();
         if (now - lastStatsTime > 500) {
             double captureFps = 0.0;
-            double dur = (now - lastStatsTime) / 1000.0;
-            if (arrivalTimestamps.size() > 1 && dur > 0.0) {
-                captureFps = (arrivalTimestamps.size() - 1) / dur;
+            if (arrivalTimestamps.size() > 1) {
+                double fpsDur = (arrivalTimestamps.back() - arrivalTimestamps.front()) / 1000.0;
+                if (fpsDur > 0.0) {
+                    captureFps = (arrivalTimestamps.size() - 1) / fpsDur;
+                }
             }
 
             NDIlib_recv_performance_t total;
@@ -316,6 +318,7 @@ void NDIEngine::captureLoop() {
 
             std::lock_guard<std::mutex> statsLock(m_statsMutex);
             double avgJitter = m_jitterHistory.empty() ? 0.0 : (m_jitterSum / m_jitterHistory.size());
+            double dur = (now - lastStatsTime) / 1000.0;
             double bitrateMBs = 0.0;
             if (dur > 0.0) {
                 bitrateMBs = (double)intervalBytes / dur / (1024.0 * 1024.0);
