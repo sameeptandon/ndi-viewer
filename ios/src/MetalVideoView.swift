@@ -245,13 +245,15 @@ class NDIMetalView: MTKView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if self.window != nil {
-            // Auto VSYNC render loop runs on background thread when attached to window (bypasses main thread)
+            // Enable CoreAnimation backing (required for MTKView display link on macOS)
+            self.wantsLayer = true
+            
+            // Set isPaused = false and enableSetNeedsDisplay = false to run the continuous background VSYNC loop
             self.isPaused = false
-            self.enableSetNeedsDisplay = true
+            self.enableSetNeedsDisplay = false
             self.preferredFramesPerSecond = 120 // Target high-refresh rate on macOS
         } else {
             self.isPaused = true
-            self.enableSetNeedsDisplay = false
         }
     }
 }
@@ -260,12 +262,12 @@ class NDIMetalView: MTKView {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         if self.window != nil {
+            // Set isPaused = false and enableSetNeedsDisplay = false to run the continuous background VSYNC loop
             self.isPaused = false
-            self.enableSetNeedsDisplay = true
+            self.enableSetNeedsDisplay = false
             self.preferredFramesPerSecond = 60
         } else {
             self.isPaused = true
-            self.enableSetNeedsDisplay = false
         }
     }
 }
