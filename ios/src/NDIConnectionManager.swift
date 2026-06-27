@@ -2,6 +2,44 @@ import Foundation
 import Combine
 import SwiftUI
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
+// Manage screen idle dimming and sleep prevention dynamically
+public final class IdleTimerManager {
+    public static let shared = IdleTimerManager()
+    private init() {}
+    
+    #if os(macOS)
+    private var activityToken: NSObjectProtocol?
+    #endif
+    
+    public func disableIdleTimer(reason: String) {
+        #if os(iOS) || os(visionOS)
+        UIApplication.shared.isIdleTimerDisabled = true
+        #elseif os(macOS)
+        if activityToken == nil {
+            activityToken = ProcessInfo.processInfo.beginActivity(
+                options: .idleDisplaySleepDisabled,
+                reason: reason
+            )
+        }
+        #endif
+    }
+    
+    public func enableIdleTimer() {
+        #if os(iOS) || os(visionOS)
+        UIApplication.shared.isIdleTimerDisabled = false
+        #elseif os(macOS)
+        if let token = activityToken {
+            ProcessInfo.processInfo.endActivity(token)
+            activityToken = nil
+        }
+        #endif
+    }
+}
+
 // Declare performance stats locally in Swift
 public struct NDIStats {
     public var captureFps: Double = 0.0
@@ -33,8 +71,7 @@ public class NDIConnectionManager: ObservableObject {
 
     deinit {
         stopDiscovery()
-        wrapper.disconnect()
-        statsTimer?.invalidate()
+        disconnect()
     }
 
     public func startDiscovery() {
@@ -57,6 +94,9 @@ public class NDIConnectionManager: ObservableObject {
             audioPlayer.start()
             startCapture()
             
+            // Disable screen dimming/idle sleep while streaming
+            IdleTimerManager.shared.disableIdleTimer(reason: "Streaming NDI source: \(sourceName)")
+            
             // Periodically fetch performance metrics (every 500ms)
             statsTimer?.invalidate()
             statsTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
@@ -70,12 +110,17 @@ public class NDIConnectionManager: ObservableObject {
         wrapper.stopCapture()
         wrapper.disconnect()
         audioPlayer.stop()
+        
+        // Re-enable screen dimming/idle sleep
+        IdleTimerManager.shared.enableIdleTimer()
+        
         isStreaming = false
         currentSource = ""
         stats = NDIStats()
         streamWidth = 16
         streamHeight = 9
     }
+
 
     private func startCapture() {
         wrapper.startCapture(
